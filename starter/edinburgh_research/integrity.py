@@ -82,6 +82,21 @@ def extract_condition_facts(text: str) -> list[str]:
     return [c for c in known if c in tl]
 
 
+def extract_labeled_facts(text: str) -> list[str]:
+    """Facts from 'Label: value' lines (used by grader plants and markdown flyers)."""
+    stripped = re.sub(r"<[^>]+>", " ", text)
+    facts: list[str] = []
+    for m in re.finditer(
+        r"(?:Venue|Total|Deposit|Weather|Conditions?|Temperature):\s*([^\n.]+)",
+        stripped,
+        re.IGNORECASE,
+    ):
+        val = m.group(1).strip()
+        if val:
+            facts.append(val)
+    return facts
+
+
 def extract_testid_facts(text: str) -> dict[str, str]:
     """For HTML flyers that use data-testid, extract {testid: value} pairs.
 
@@ -120,9 +135,14 @@ def verify_dataflow(flyer_content: str) -> IntegrityResult:
         return IntegrityResult(ok=True, summary="no facts to verify (empty flyer)")
 
     facts_to_check: list[str] = []
-    facts_to_check.extend(extract_money_facts(flyer_content))
-    facts_to_check.extend(extract_temperature_facts(flyer_content))
-    facts_to_check.extend(extract_condition_facts(flyer_content))
+    testid_facts = extract_testid_facts(flyer_content)
+    if testid_facts:
+        facts_to_check.extend(testid_facts.values())
+    else:
+        facts_to_check.extend(extract_money_facts(flyer_content))
+        facts_to_check.extend(extract_temperature_facts(flyer_content))
+        facts_to_check.extend(extract_condition_facts(flyer_content))
+        facts_to_check.extend(extract_labeled_facts(flyer_content))
 
     # De-dupe while preserving order
     seen: set[str] = set()
@@ -172,6 +192,7 @@ __all__ = [
     "extract_condition_facts",
     "extract_money_facts",
     "extract_temperature_facts",
+    "extract_labeled_facts",
     "extract_testid_facts",
     "fact_appears_in_log",
     "record_tool_call",

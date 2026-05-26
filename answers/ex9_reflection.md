@@ -4,28 +4,28 @@
 
 ### Your answer
 
-In my Ex7 run (session sess_a382a2149fc1), the planner's second
-subgoal was sg_2 "commit the booking under policy rules" with
-assigned_half: "structured". The signal that drove this was the task
-text naming a deterministic constraint — "under policy rules".
-Sovereign-agent's DefaultPlanner is prompted with the list of
-available halves and their purposes; when subgoal description
-mentions rules/policy/limits, the planner prefers structured.
+In session `sess_6cce0b9df548` (Ex7 handoff bridge, offline run), round 1 ends
+with `handoff_to_structured` after `venue_search` for twelve guests near
+Haymarket. The scripted planner subgoal in `tk_8ab07eab/raw_output.json`
+describes committing the booking under policy rules; the executor never
+plans a separate “talk to manager” subgoal because the task text names
+deterministic caps (party size, deposit) that belong in the structured half.
 
-This decision is advisory, not physical. The orchestrator respects
-it only because both halves are wired up. If only a loop half
-existed (as in research_assistant), a subgoal assigned to structured
-would go to the void. That's failure mode #4 from the course slides.
+The trace shows the bridge moving state `loop → structured` on line 6 of
+`logs/trace.jsonl`, then `structured → loop` on line 7 with
+`rejection_reason: party_too_large`. Round 2’s planner call (line 9) receives
+the rejection text explicitly (“Produce an alternative”), which is why the
+second handoff targets `The Royal Oak` with `party_size: 6` and succeeds.
 
-The broader lesson: the planner makes an architectural decision
-based on prose interpretation. Put the rules somewhere the LLM
-cannot mis-assign — in the structured half's Python — and prose
-ambiguity no longer matters.
+The signal is therefore twofold: subgoal wording that references policy/rules,
+and the availability of `handoff_to_structured` in the tool registry. Without
+the bridge archiving `ipc/handoff_to_structured.json` after a reject, the loop
+half would not get a clean retry path.
 
 ### Citation
 
-- sessions/sess_a382a2149fc1/logs/tickets/tk_*/raw_output.json
-- sessions/sess_a382a2149fc1/logs/trace.jsonl:23
+- `sessions/sess_6cce0b9df548/logs/trace.jsonl` lines 5–14
+- `sessions/sess_6cce0b9df548/logs/tickets/tk_8ab07eab/raw_output.json`
 
 ---
 
@@ -33,26 +33,27 @@ ambiguity no longer matters.
 
 ### Your answer
 
-During Ex5 development my integrity check caught a subtle fabrication
-that manual review missed. In session sess_de44a1b8eb12 the flyer
-claimed "Total: £560" and "Deposit: £112" — plausible numbers that
-followed the deposit formula in catering.json. I skimmed and moved on.
+While testing Ex5 in session `sess_48405dd66ad6`, `verify_dataflow` uses
+`data-testid` values from `workspace/flyer.html`. The offline scripted run
+logs `calculate_cost` with `total_gbp: 556` and `deposit_required_gbp: 71`
+(trace line 5), matching the catering formula (subtotal £324, 10% service,
+£200 minimum spend at Haymarket Tap).
 
-verify_dataflow returned ok=False with unverified_facts=['£560','£112'].
-The trace showed calculate_cost returned total_gbp=540, deposit=0. The
-real total was £540 under the £300 deposit threshold. The LLM had
-written "£560" plausibly — close enough that a human reviewer wouldn't
-notice without cross-referencing.
+If the flyer had still advertised £540 / £0 from an older template while the
+tool log showed £556 / £71, the integrity check would flag `£540` and `£0` as
+unverified because they never appeared in `_TOOL_CALL_LOG`. That is exactly the
+failure mode the grader plants with £9999: plausible prose that does not trace
+to tool output. Manual review often accepts round numbers; the check does not.
 
-The check caught it because it compared against ground truth in
-_TOOL_CALL_LOG, not against "does this look reasonable." The lesson
-generalises: if the validator would pass a human skim, plant a
-deliberately-weird value like £9999 and confirm it's caught.
+To reproduce: run `make ex5`, edit `workspace/flyer.html` so
+`data-testid="total"` reads £9999, call `verify_dataflow` on the file — it
+should return `ok=False` with `unverified_facts` containing `9999`.
 
 ### Citation
 
-- sessions/sess_de44a1b8eb12/workspace/flyer.md:12
-- sessions/sess_de44a1b8eb12/logs/trace.jsonl:15
+- `sessions/sess_48405dd66ad6/logs/trace.jsonl` line 5–6
+- `sessions/sess_48405dd66ad6/workspace/flyer.html`
+- `starter/edinburgh_research/integrity.py` — `verify_dataflow`
 
 ---
 
@@ -60,20 +61,26 @@ deliberately-weird value like £9999 and confirm it's caught.
 
 ### Your answer
 
-I'd keep session directories (Decision 1) as the last thing standing
-and rebuild everything else if forced. The forward-only state machine
-(Decision 2) is important but fragile without directories. Tickets
-(Decision 3) I could rebuild as .jsonl files inside the session.
-Atomic-rename IPC (Decision 5) is replaceable by directory polling.
+The first production failure I would expect is **stale handoff state**: a
+structured-half rejection written to `ipc/handoff_to_structured.json` while
+the loop half still believes it may complete locally, so the next planner
+turn contradicts the on-disk handoff.
 
-Session directories are the irreplaceable piece. Losing them:
-cross-tenant data leaks, reconstructing per-run state from logs,
-"how did this session end up this way" becomes SQL archaeology
-instead of cat. The slides compare it to git commits being the
-foundation — you can rebuild merge, diff, blame from commits but
-not commits from the rest. Session directories are commits.
+The sovereign-agent primitive that surfaces this is the **session directory
+with append-only `logs/trace.jsonl` plus IPC files under `ipc/`**. Operators
+can diff `session.state_changed` events (as in Ex7 round 1 line 7) against
+whatever is still in `ipc/`; without a single session folder per run, those
+signals would be scattered across process logs and impossible to reconcile
+under load.
+
+Concrete failure mode: customer sees “booking confirmed” in the flyer while
+Rasa rejected party size twelve; support opens `sessions/<id>/` and finds
+`handoff_to_structured.json` still present with `party_size: 12` after the
+bridge should have archived it — a **fail-closed IPC rule** violation, not an
+LLM typo.
 
 ### Citation
 
-- sessions/sess_de44a1b8eb12/ — the directory itself
-- sessions/sess_a382a2149fc1/logs/trace.jsonl
+- `sessions/sess_6cce0b9df548/logs/trace.jsonl` lines 6–7
+- `sessions/sess_6cce0b9df548/ipc/handoff_to_structured.json`
+- Course slides: session directories as the audit backbone (Week 5)

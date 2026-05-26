@@ -1,0 +1,20 @@
+{
+  "ticket_id": "tk_90f9aef3",
+  "operation": "executor.run_subgoal/sg_1",
+  "started_at": "2026-05-26T09:04:47.192733+00:00",
+  "completed_at": "2026-05-26T09:04:47.194337+00:00",
+  "duration_ms": 1,
+  "outputs": [
+    {
+      "path": "/Users/olegorlov/Desktop/Nebius/Hometasks/Agents/homework-pub-booking/sessions/sess_48405dd66ad6/logs/tickets/tk_90f9aef3/raw_output.json",
+      "sha256": "a79efcd7f607e84872543e41381a2c35b5bcab005239afe07329b34bc69e77b9",
+      "size_bytes": 2040,
+      "content_type": "application/json"
+    }
+  ],
+  "metrics": {
+    "tool_calls": 5,
+    "turns_used": 4,
+    "handoff_requested": false
+  }
+}
